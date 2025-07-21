@@ -1,83 +1,199 @@
-# KStateMachine
+# State Machine & KStateMachine Library
 
-# 📘 Giới thiệu về State Machine & KStateMachine Library
+## Overview
 
-## 🧠 State Machine là gì?
+**State Machine** is a logical model that describes the behavior of a system through:
+- **States** 
+- **Transitions** beetween states by event
+- **Actions** executed at each state or during transitions
 
-**State Machine (Máy Trạng Thái)** là một mô hình logic giúp mô tả hành vi của hệ thống thông qua:
-- **Các trạng thái (States)**
-- **Chuyển tiếp (Transitions)** giữa các trạng thái dựa trên sự kiện
-- **Hành động (Actions)** thực thi tại mỗi trạng thái hoặc khi chuyển tiếp
-
-### 🧱 Thành phần chính:
-| Thành phần         | Mô tả |
+### Component:
+| Component        | Describe |
 |--------------------|-------|
-| **State**          | Trạng thái hệ thống tại một thời điểm |
-| **Transition**     | Kết nối giữa 2 trạng thái, được kích hoạt bởi sự kiện |
-| **Event**          | Điều kiện/kích hoạt để chuyển trạng thái |
-| **Initial State**  | Trạng thái bắt đầu |
-| **Final State**    | Trạng thái kết thúc |
-| **Nested State**   | Trạng thái con nằm trong trạng thái cha (tổ chức phân cấp) |
+| **State**          | State at the specific moment |
+| **Transition**     | Moving between 2 states, trigger by Event |
+| **Event**          | User to moving to other state |
+| **Initial State**  | Initial state of system |
+| **Final State**    | Final state of system |
+| **Nested State**   | A child state within a parent state (hierarchical structure) |
+
+### Note: 
+#### TransitionType: 
+
+- TransitionType.LOCAL
+- TransitionType.EXTERNAL
+
 
 ---
 
-## 📦 Thư viện `KStateMachine` (ru.nsk)
+## Library `KStateMachine` (ru.nsk)
 
-### 🔹 KStateMachine là gì?
+### 🔹 What is KStateMachine?
 
-KStateMachine là thư viện Kotlin đơn giản nhưng mạnh mẽ để xây dựng **finite state machines**:
-- Hỗ trợ **nested states**
-- Hỗ trợ **asynchronous transitions**
-- Dễ mở rộng, dễ test, dễ visualize luồng xử lý
+KStateMachine is normal Kotlin library with strenght to build **state machines**:
+- Support **nested states**
+- Support **asynchronous transitions** : do not block main thread,handle some cases that could be delay or waiting result form API, ...
+- Open, testing, visualize logic flow easily: can use lib to export to state diagram, it's easy to observe and maintain
 
-### 🔹 Cài đặt
+### 🔹 Import
 
 ```kotlin
 dependencies {
-    implementation("ru.nsk:kstatemachine:0.24.0")
+    implementation(libs.nsk90.kstatemachine)
+    implementation(libs.kstatemachine.coroutines)
+    implementation(libs.kstatemachine.serialization)
 }
 ```
 
 ---
 
-## 🚚 Ví dụ: Đơn hàng
+## Example for Order
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Pending
-    Pending --> Confirmed: Xác nhận
-    Confirmed --> Shipped: Giao hàng
-    Shipped --> Delivered: Đã nhận
-    Confirmed --> Cancelled: Hủy đơn
+    [*] --> Idle
+    Idle --> Processing: SendNext
+
+    Processing --> InputInfo: SendNext
+    
+    InputInfo --> Payment: SendNext
+
+    Payment --> Confirmation: SendNext
+    Payment --> Cancelled: SendPaymentFail
+
+    Confirmation --> Shipping: SendNext
+    Confirmation --> InputInfo: ChangeInfo
+    Confirmation --> Cancelled: SendCancel
+
+    Shipping --> Cancelled: SendCancel
+
+```
+
+```kotlin
+sealed class OrderManagerState : DefaultState() {
+        object Idle : OrderManagerState()
+
+        object Processing : OrderManagerState()
+        object InputInfo : OrderManagerState()
+        object Payment : OrderManagerState()
+        object Confirmation : OrderManagerState()
+
+        object Shipping : OrderManagerState()
+        object Cancelled : OrderManagerState(), FinalState
+    }
+
+    sealed class OrderManagerEvent : Event {
+        object SendPaymentFail : OrderManagerEvent()
+        object SendCancel : OrderManagerEvent()
+        object ChangedInfo : OrderManagerEvent()
+
+        object SendNext : OrderManagerEvent()
+    }
+
+fun main(): Unit = runBlocking {
+    val orderStateMachine = createStateMachine(this) {
+        addInitialState(OrderManagerState.Idle) {
+            onEntry {
+                println("Idle - entry")
+                delay(100)
+            }
+            onExit { println("Idle - onExit") }
+            transition<OrderManagerEvent.SendNext> {
+                targetState = OrderManagerState.Processing
+            }
+        }
+        addState(OrderManagerState.Processing) {
+            onEntry { println("======== Processing - entry")
+                delay(100)
+            }
+            onExit { println("======== Processing - onExit") }
+
+            addInitialState(OrderManagerState.InputInfo) {
+                onEntry { println("InputInfo - entry")
+                    delay(100)
+                }
+                onExit { println("InputInfo - onExit") }
+                transition<OrderManagerEvent.SendNext> {
+                    type = TransitionType.LOCAL
+                    targetState = OrderManagerState.Payment
+                }
+            }
+            addState(OrderManagerState.Payment) {
+                onEntry { println("Payment - entry")
+                    delay(100)
+                }
+                onExit { println("Payment - onExit") }
+                transition<OrderManagerEvent.SendNext> {
+                    targetState = OrderManagerState.Shipping
+                }
+                transition<OrderManagerEvent.SendPaymentFail> {
+                    targetState = OrderManagerState.Cancelled
+                }
+            }
+            addState(OrderManagerState.Confirmation) {
+                onEntry { println("Confirmation - entry")
+                    delay(100)
+                }
+                onExit { println("Confirmation - onExit") }
+                transition<OrderManagerEvent.SendNext> {
+                    targetState = OrderManagerState.Shipping
+                }
+                transition<OrderManagerEvent.SendPaymentFail> {
+                    targetState = OrderManagerState.Cancelled
+                }
+            }
+        }
+        addState(OrderManagerState.Shipping) {
+            onEntry { println("Shipping - entry")
+                delay(100)
+            }
+            onExit { println("Shipping - onExit") }
+
+        }
+        addFinalState(OrderManagerState.Cancelled) {
+            onEntry { println("Cancelled - entry")
+                delay(100)
+            }
+            onExit { println("Cancelled - onExit") }
+        }
+        onFinished { println("Finished") }
+    }
+
+    orderStateMachine.processEvent(OrderManagerEvent.SendNext)
+    orderStateMachine.processEvent(OrderManagerEvent.SendNext)
+    orderStateMachine.processEvent(OrderManagerEvent.SendNext)
+    orderStateMachine.processEvent(OrderManagerEvent.SendNext)
+    orderStateMachine.processEvent(OrderManagerEvent.SendNext)
+    orderStateMachine.processEvent(OrderManagerEvent.SendNext)
+
+}
 ```
 
 ---
 
-## 🔧 Khi nào nên dùng?
+## When to use
 
-- Khi luồng logic có nhiều trạng thái, điều kiện rẽ nhánh
-- Khi cần mô hình hóa các hành vi phức tạp
-- Khi cần đảm bảo trạng thái hợp lệ, dễ debug, dễ test
+- When logic flow have many states and clearly condition
 
 ---
 
-## ✅ Ưu điểm
+## Advantage
 
-- Quản lý trạng thái rõ ràng
-- Dễ mở rộng và bảo trì
-- Tránh lỗi logic khi chuyển trạng thái
-- Có thể tách biệt phần logic & giao diện
+- Management states clearly 
+- Open and maintainance easily
+- Can avoid wrong logic when transitioning
+- The logic and the interface can be separated
 
 ---
 
-## 📚 Tài liệu tham khảo
+## 📚 Reference
 
 - [KStateMachine GitHub](https://github.com/nsk90/kstatemachine)
 - [Wiki: Finite State Machine](https://en.wikipedia.org/wiki/Finite-state_machine)
 
 ---
 
-## 📞 Liên hệ
+## Contact
 
 Author: **AnhNN166**  
 Role: Developer – Automotive Domain  

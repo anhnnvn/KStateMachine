@@ -20,8 +20,13 @@
 ### Note: 
 #### TransitionType: 
 
-- TransitionType.LOCAL
-- TransitionType.EXTERNAL
+`TransitionType` defines **how a transition behaves** within a nested or parent-child state relationship.
+| Type | Description |
+|------|-------------|
+| `LOCAL` | The transition **stays within the current hierarchical state**. Entry/exit handlers of parent state are **not called**. |
+| `EXTERNAL` | The transition **exits the source state and its parents**, then enters the target state (including entering parent states if needed). Entry/exit handlers **are executed**. |
+> 💡 **Use `LOCAL`** if you want a "soft" transition within a composite state, avoiding unnecessary re-entry.  
+> **Use `EXTERNAL`** if a full exit-entry cycle is needed.
 
 
 ---
@@ -173,7 +178,10 @@ fun main(): Unit = runBlocking {
 
 ## When to use
 
-- When logic flow have many states and clearly condition
+- Multiple states with clear transition rules
+- Complex logic flow that needs to be predictable and maintainable
+- Need to separate UI and logic clearly
+- Situations involving asynchronous waiting (e.g. API calls)
 
 ---
 
